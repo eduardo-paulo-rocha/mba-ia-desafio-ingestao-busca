@@ -4,7 +4,7 @@ import hashlib
 from typing import List, Dict, Tuple, Any
 from dotenv import load_dotenv
 from pypdf import PdfReader
-from openai import OpenAI
+from langchain_openai import OpenAIEmbeddings
 import psycopg
 from pgvector.psycopg import register_vector
 
@@ -94,12 +94,11 @@ def get_embedding_openai(text: str) -> List[float]:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY não encontrada no ambiente.")
 
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.embeddings.create(
+    embeddings = OpenAIEmbeddings(
         model=EMBEDDING_MODEL,
-        input=text
+        api_key=OPENAI_API_KEY
     )
-    embedding = response.data[0].embedding
+    embedding = embeddings.embed_query(text)
 
     return embedding
 

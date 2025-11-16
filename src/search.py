@@ -2,7 +2,8 @@ import os
 import psycopg
 from typing import Optional
 from dotenv import load_dotenv
-from openai import OpenAI
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_core.prompts import PromptTemplate
 from pgvector.psycopg import register_vector
 
 load_dotenv()
@@ -66,18 +67,17 @@ def get_db_conn() -> psycopg.Connection:
 
 def get_embedding_openai(text: str) -> list:
     """
-    Vetoriza o texto usando a API OpenAI.
+    Vetoriza o texto usando a API OpenAI via LangChain.
     Retorna um array de floats que será convertido para vector(1536) pelo pgvector.
     """
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY não encontrada no ambiente.")
 
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.embeddings.create(
+    embeddings = OpenAIEmbeddings(
         model=EMBEDDING_MODEL,
-        input=text
+        api_key=OPENAI_API_KEY
     )
-    embedding = response.data[0].embedding
+    embedding = embeddings.embed_query(text)
     # Converter para lista de floats (pgvector.psycopg registra o adaptador automaticamente)
     return list(embedding)
 
@@ -127,7 +127,7 @@ def format_context(search_results: list) -> str:
 
 def call_llm(prompt: str) -> str:
     """
-    Chama o modelo LLM com o prompt montado.
+    Chama o modelo LLM com o prompt montado usando LangChain.
     
     Note: gpt-5-nano requer temperature=1 (default).
     Por isso, não especificamos temperatura para manter compatibilidade com diferentes modelos.
@@ -135,16 +135,14 @@ def call_llm(prompt: str) -> str:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY não encontrada no ambiente.")
 
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    response = client.chat.completions.create(
+    llm = ChatOpenAI(
         model=LLM_MODEL,
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
-        # Sem especificar temperature para usar o padrão do modelo
+        api_key=OPENAI_API_KEY
     )
     
-    return response.choices[0].message.content
+    response = llm.invoke(prompt)
+    
+    return response.content
 
 
 def search_prompt(question: Optional[str] = None) -> str:
