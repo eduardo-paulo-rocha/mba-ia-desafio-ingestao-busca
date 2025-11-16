@@ -4,9 +4,8 @@ import hashlib
 from typing import List, Dict, Tuple, Any
 from dotenv import load_dotenv
 from pypdf import PdfReader
-import openai
+from openai import OpenAI
 import psycopg
-from pgvector import Vector
 from pgvector.psycopg import register_vector
 
 load_dotenv()
@@ -94,11 +93,15 @@ def compute_sha256(text: str) -> str:
 def get_embedding_openai(text: str) -> List[float]:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY não encontrada no ambiente.")
-    openai.api_key = OPENAI_API_KEY
-    # Use the OpenAI embeddings API
-    resp = openai.Embedding.create(model=EMBEDDING_MODEL, input=text)
-    emb = resp["data"][0]["embedding"]
-    return emb
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    response = client.embeddings.create(
+        model=EMBEDDING_MODEL,
+        input=text
+    )
+    embedding = response.data[0].embedding
+
+    return embedding
 
 
 def get_db_conn():
@@ -178,13 +181,14 @@ def upsert_chunks(conn: psycopg.Connection, documento_id: str, chunk_items: List
     # chunk_index, texto, page_start, page_end, content_hash, metadata (dict), embedding (list[float])
     with conn.cursor() as cur:
         for item in chunk_items:
-            emb_vec = Vector(item["embedding"])
+            # pgvector accepts embeddings as lists directly
+            embedding = item["embedding"]
             metadata_json = json.dumps(item.get("metadata") or {})
             cur.execute(UPSERT_SQL, (
                 documento_id,
                 item["chunk_index"],
                 item["texto"],
-                emb_vec,
+                embedding,
                 item["page_start"],
                 item["page_end"],
                 item["content_hash"],
