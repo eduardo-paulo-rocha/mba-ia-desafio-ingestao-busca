@@ -21,8 +21,10 @@ mba-ia-desafio-ingestao-busca/
 │   └── chat.py            # Interface CLI interativa para o usuário
 ├── sql/
 │   └── create_documentos_table.sql  # Schema SQL com tabela e função de busca
+├── scripts/
+│   ├── db-init.ps1        # Script PowerShell para inicializar o ambiente (Windows)
+│   └── db-init.sh         # Script Bash para inicializar o ambiente (Linux/macOS)
 ├── docker-compose.yml     # Orquestração: PostgreSQL + pgVector + bootstrap
-├── db-init.ps1            # Script PowerShell para inicializar o ambiente
 ├── requirements.txt       # Dependências Python
 ├── .env                   # Variáveis de ambiente (PDF_PATH, API keys, BD)
 └── README.md              # Este arquivo
@@ -36,7 +38,8 @@ mba-ia-desafio-ingestao-busca/
 | **`src/search.py`** | Realiza busca semântica vetorial, monta prompt com contexto e chama a LLM (GPT) para gerar resposta. |
 | **`src/chat.py`** | CLI interativa que captura perguntas do usuário e exibe respostas fornecidas pelo `search_prompt()`. |
 | **`docker-compose.yml`** | Define serviços: PostgreSQL com pgVector, bootstrap para extensão e schema. |
-| **`db-init.ps1`** | Script que gerencia containers Docker (down, up, validação). |
+| **`scripts/db-init.ps1`** | Script PowerShell que gerencia containers Docker (down, up, validação). Usar em **Windows**. |
+| **`scripts/db-init.sh`** | Script Bash que gerencia containers Docker (down, up, validação). Usar em **Linux/macOS**. |
 | **`sql/create_documentos_table.sql`** | DDL: cria tabela `documentos`, índice IVFFLAT e função `search_documentos()`. |
 
 ---
@@ -47,7 +50,7 @@ mba-ia-desafio-ingestao-busca/
 
 ```mermaid
 graph TD
-    A["1️⃣ Executar db-init.ps1"] -->|Inicializa stack Docker| B["PostgreSQL + pgVector"]
+    A["1️⃣ Executar Script de Inicialização<br/>Windows: db-init.ps1<br/>Linux/macOS: db-init.sh"] -->|Inicializa stack Docker| B["PostgreSQL + pgVector"]
     B -->|Extension criada| C["pgvector extension"]
     B -->|Schema carregado| D["Tabela documentos + Índices"]
     
@@ -178,8 +181,19 @@ pip install -r requirements.txt
 ```
 
 ### Passo 2: Inicializar Infraestrutura
+
+**Windows (PowerShell)**:
 ```powershell
-.\db-init.ps1
+.\scripts\db-init.ps1
+```
+
+**Linux/macOS (Bash)**:
+```bash
+bash ./scripts/db-init.sh
+```
+ou
+```bash
+./scripts/db-init.sh
 ```
 
 ### Passo 3: Ingerir PDF
