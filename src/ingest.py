@@ -4,18 +4,15 @@ import hashlib
 from typing import List, Dict, Tuple, Any
 from dotenv import load_dotenv
 from pypdf import PdfReader
-from langchain_openai import OpenAIEmbeddings
 import psycopg
 from pgvector.psycopg import register_vector
+from utils import get_db_conn, get_embedding_openai
 
 load_dotenv()
 
 # Configs (env overrides)
 PDF_PATH = os.getenv("PDF_PATH", "./document.pdf")
 DATABASE_URL = os.getenv("DATABASE_URL")
-EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 UPsert_BATCH = 8
@@ -88,38 +85,6 @@ def chunk_text_with_pages(full_text: str, offsets: List[int], chunk_size: int = 
 
 def compute_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def get_embedding_openai(text: str) -> List[float]:
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY não encontrada no ambiente.")
-
-    embeddings = OpenAIEmbeddings(
-        model=EMBEDDING_MODEL,
-        api_key=OPENAI_API_KEY
-    )
-    embedding = embeddings.embed_query(text)
-
-    return embedding
-
-
-def get_db_conn():
-    if DATABASE_URL:
-        conn = psycopg.connect(DATABASE_URL, autocommit=False)
-    else:
-        # fallback to individual PG_* env vars
-        conninfo = {
-            "host": os.getenv("PGHOST", "localhost"),
-            "port": os.getenv("PGPORT", "5432"),
-            "user": os.getenv("PGUSER", "postgres"),
-            "password": os.getenv("PGPASSWORD", "postgres"),
-            "dbname": os.getenv("PGDATABASE", "rag"),
-        }
-        dsn = "host={host} port={port} user={user} password={password} dbname={dbname}".format(**conninfo)
-        conn = psycopg.connect(dsn, autocommit=False)
-    # register pgvector adapter for this connection
-    register_vector(conn)
-    return conn
 
 
 def ensure_vector_extension(conn: psycopg.Connection):
