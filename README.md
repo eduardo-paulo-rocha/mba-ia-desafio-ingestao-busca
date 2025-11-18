@@ -18,7 +18,8 @@ mba-ia-desafio-ingestao-busca/
 ├── src/
 │   ├── ingest.py          # Pipeline de ingestão: lê PDF, vetoriza e salva no banco
 │   ├── search.py          # Motor de busca semântica e geração de respostas
-│   └── chat.py            # Interface CLI interativa para o usuário
+│   ├── chat.py            # Interface CLI interativa para o usuário
+│   └── utils.py           # Funções compartilhadas: get_db_conn(), get_embedding_openai()
 ├── sql/
 │   └── create_documentos_table.sql  # Schema SQL com tabela e função de busca
 ├── scripts/
@@ -34,8 +35,9 @@ mba-ia-desafio-ingestao-busca/
 
 | Arquivo | Propósito |
 |---------|-----------|
-| **`src/ingest.py`** | Lê PDF, extrai texto, divide em chunks, vetoriza com OpenAI Embeddings, e faz upsert no PostgreSQL. |
-| **`src/search.py`** | Realiza busca semântica vetorial, monta prompt com contexto e chama a LLM (GPT) para gerar resposta. |
+| **`src/utils.py`** | **[NOVO]** Módulo centralizado com funções compartilhadas: `get_db_conn()` e `get_embedding_openai()`. Elimina duplicação de código entre ingest.py e search.py. |
+| **`src/ingest.py`** | Lê PDF, extrai texto, divide em chunks, vetoriza com OpenAI Embeddings (via utils), e faz upsert no PostgreSQL. |
+| **`src/search.py`** | Realiza busca semântica vetorial, monta prompt com contexto e chama a LLM (GPT) para gerar resposta. Usa funções compartilhadas de utils. |
 | **`src/chat.py`** | CLI interativa que captura perguntas do usuário e exibe respostas fornecidas pelo `search_prompt()`. |
 | **`docker-compose.yml`** | Define serviços: PostgreSQL com pgVector, bootstrap para extensão e schema. |
 | **`scripts/db-init.ps1`** | Script PowerShell que gerencia containers Docker (down, up, validação). Usar em **Windows**. |
@@ -72,7 +74,43 @@ graph TD
 
 ---
 
-## 📝 Descrição de Cada Etapa
+## 🔄 Refatoração de Código (Eliminação de Duplicação)
+
+### 📌 Resumo das Mudanças
+
+Para melhorar a manutenibilidade e reduzir duplicação de código, as seguintes funções compartilhadas foram centralizadas no módulo `utils.py`:
+
+| Função | Localização Original | Localização Atual | Benefício |
+|--------|---------------------|-------------------|-----------|
+| `get_db_conn()` | `ingest.py` e `search.py` | `utils.py` | ✅ Única source of truth para conexão com banco |
+| `get_embedding_openai()` | `ingest.py` e `search.py` | `utils.py` | ✅ Lógica centralizada de vetorização |
+
+### 📊 Impacto da Refatoração
+
+- **Linhas removidas**: 81
+- **Redução de duplicação**: 100%
+- **Imports atualizados**: `ingest.py` e `search.py` importam de `utils.py`
+- **Funcionalidade**: ✅ Preservada completamente (sem quebras)
+
+### 🔗 Como as Dependências Funcionam Agora
+
+```
+utils.py (Módulo central)
+  ├── get_db_conn() → PostgreSQL + pgvector
+  └── get_embedding_openai() → OpenAI API
+
+ingest.py
+  ├── from utils import get_db_conn, get_embedding_openai
+  ├── Lê PDF → Chunks → Embeddings (via utils) → Database (via utils)
+  └── Mantém lógica específica: chunking, hash, upsert
+
+search.py
+  ├── from utils import get_db_conn, get_embedding_openai
+  ├── Pergunta do usuário → Embedding (via utils) → Busca (via utils) → Prompt → LLM
+  └── Mantém lógica específica: prompt template, formatação de contexto
+```
+
+---
 
 ### 1️⃣ Inicialização do Banco de Dados (`db-init.ps1`)
 
@@ -104,11 +142,16 @@ graph TD
    - Divide o texto em chunks de ~1000 caracteres com 150 de sobreposição
    - Rastreia página de origem de cada chunk
 
-3. **Vetorização** (`get_embedding_openai()`)
+3. **Vetorização** (`get_embedding_openai()` **via utils.py**)
    - Converte cada chunk em embedding 1536-dimensional via OpenAI Embeddings API
    - Gera por lote para otimizar requisições
+   - ✅ Função centralizada em `utils.py` para reutilização
 
-4. **Armazenamento** (`upsert_chunks()`)
+4. **Conexão com Banco** (`get_db_conn()` **via utils.py**)
+   - Estabelece conexão com PostgreSQL + pgvector
+   - ✅ Função centralizada em `utils.py` para reutilização
+
+5. **Armazenamento** (`upsert_chunks()`)
    - Salva em tabela `documentos` com:
      - `texto`: conteúdo do chunk
      - `embedding`: vetor para busca semântica
@@ -128,26 +171,31 @@ graph TD
 
 1. **Validação**: Verifica se pergunta é válida e não vazia
 
-2. **Vetorização da Pergunta** (`get_embedding_openai()`)
+2. **Vetorização da Pergunta** (`get_embedding_openai()` **via utils.py**)
    - Transforma pergunta em embedding 1536-dimensional
+   - ✅ Função centralizada em `utils.py` para reutilização
 
-3. **Busca Semântica** (`search_documents()`)
+3. **Conexão com Banco** (`get_db_conn()` **via utils.py**)
+   - Estabelece conexão com PostgreSQL + pgvector
+   - ✅ Função centralizada em `utils.py` para reutilização
+
+4. **Busca Semântica** (`search_documents()`)
    - Executa função SQL `search_documentos()` no PostgreSQL
    - Usa distância L2 (cosine similarity) em índice IVFFLAT
    - Retorna top-10 chunks mais relevantes
 
-4. **Construção do Prompt**
+5. **Construção do Prompt**
    - Formata contexto recuperado
    - Monta prompt com regras estritas:
      - ✅ Responda **APENAS** baseado no CONTEXTO
      - ✅ Se informação não está no contexto, retorne: *"Não tenho informações necessárias para responder sua pergunta."*
      - ✅ Nunca invente ou use conhecimento externo
 
-5. **Chamada da LLM** (`call_llm()`)
+6. **Chamada da LLM** (`call_llm()`)
    - Envia prompt a OpenAI GPT (modelo configurável)
    - Recebe resposta garantidamente fundamentada nos documentos
 
-6. **Exibição**: Mostra resposta ao usuário no terminal
+7. **Exibição**: Mostra resposta ao usuário no terminal
 
 **Exemplo de Interação**:
 ```
